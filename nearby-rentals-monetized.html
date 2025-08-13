@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nearby Rentals — Monetized One-Page Finder</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a22; --muted:#a8b3c7; --text:#e6ebf5; --accent:#6ee7b7; --accent2:#60a5fa; --danger:#f87171;
+    --chip:#202634; --chipBorder:#2a3244; --shadow: 0 6px 22px rgba(0,0,0,.35);
+    --gold:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{ margin:0; background:linear-gradient(180deg,#0b0d12, #0f1115 20%); color:var(--text); font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;}
+  header{ position:sticky; top:0; z-index:5; backdrop-filter:saturate(140%) blur(6px); background:linear-gradient(180deg, rgba(15,17,21,.85), rgba(15,17,21,.65)); border-bottom:1px solid #1e2330;}
+  .wrap{max-width:1200px; margin:0 auto; padding:12px 16px;}
+  h1{font-size:18px; margin:0 0 6px; display:flex; gap:10px; align-items:center}
+  h1 .dot{width:10px;height:10px;border-radius:50%; background:radial-gradient(circle at 30% 30%, var(--accent), #10b981 60%, #0ea5e9 100%); box-shadow:0 0 12px rgba(110,231,183,.6)}
+  .controls{ display:grid; grid-template-columns: repeat(12, 1fr); gap:10px; align-items:end; }
+  .control{ grid-column: span 3; background:var(--panel); border:1px solid #1e2330; border-radius:10px; padding:10px; box-shadow:var(--shadow); }
+  .control.small{grid-column:span 2}
+  .control.wide{grid-column:span 6}
+  label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+  input[type="text"], input[type="number"], select{ width:100%; padding:10px 12px; border-radius:8px; border:1px solid #2a3244; background:#0d1118; color:var(--text); outline:none; }
+  input[type="range"]{width:100%}
+  .btn{ appearance:none; border:none; background:linear-gradient(180deg,var(--accent2), #3b82f6); padding:10px 14px; border-radius:9px; color:white; font-weight:600; cursor:pointer; box-shadow:var(--shadow); }
+  .btn.secondary{background:linear-gradient(180deg,#374151,#1f2937)}
+  .btn.danger{background:linear-gradient(180deg,#ef4444,#b91c1c)}
+  .btn.gold{background:linear-gradient(180deg,#f59e0b,#b45309)}
+  main{display:grid; grid-template-columns: 1.1fr .9fr; gap:12px; padding:12px 16px; max-width:1200px; margin:0 auto}
+  #map{height:68vh; border-radius:14px; overflow:hidden; border:1px solid #1e2330; box-shadow:var(--shadow)}
+  .list{ min-height:68vh; background:var(--panel); border:1px solid #1e2330; border-radius:14px; overflow:auto; box-shadow:var(--shadow); }
+  .item{display:grid; grid-template-columns: 64px 1fr; gap:10px; padding:12px; border-bottom:1px dashed #2a3244; cursor:pointer}
+  .item:hover{background:#121622}
+  .badge{display:inline-flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--chipBorder); border-radius:999px; background:var(--chip); color:var(--muted); font-size:12px}
+  .badge.featured{ border-color:#a16207; background:#1e1a10; color:#fcd34d}
+  .price{font-weight:800; font-size:18px; letter-spacing:.2px}
+  .dist{font-size:12px; color:var(--muted)}
+  .empty{padding:20px; text-align:center; color:var(--muted)}
+  .pillbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px}
+  .avatar{ width:64px;height:64px; background:#0d1118; border:1px solid #2a3244; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#93c5fd;}
+  footer{padding:10px 16px 24px; color:var(--muted); text-align:center}
+  .hint{font-size:12px; color:var(--muted)}
+  .locbadge{display:inline-flex; align-items:center; gap:6px}
+  .switch{display:flex; align-items:center; gap:10px; font-size:13px}
+  .switch input{width:18px; height:18px}
+  .ad{ border:1px dashed #3b4256; background: #0d1118; padding:10px; border-radius:10px; text-align:center; color:#93a0b7; font-size:12px; }
+  .ad .title{ font-weight:700; font-size:13px; margin-bottom:4px; color:#c7d2fe}
+  .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:20; }
+  .modal .card{ width:min(520px, 92vw); background:var(--panel); border:1px solid #1e2330; border-radius:14px; box-shadow:var(--shadow); padding:16px;}
+  .row{ display:flex; gap:10px; align-items:end; }
+  .row > * { flex:1 }
+  .fine{ font-size:11px; color:var(--muted)}
+  @media (max-width: 900px){
+    main{grid-template-columns:1fr; gap:10px}
+    #map{height:60vh}
+    .control.small,.control,.control.wide{grid-column:span 12}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1><span class="dot"></span> Nearby Rentals — Monetized One-Page Finder</h1>
+    <div class="controls">
+      <div class="control small">
+        <label for="radius">Search radius (km): <span id="radiusVal">8</span></label>
+        <input id="radius" type="range" min="1" max="50" step="1" value="8" />
+      </div>
+      <div class="control small">
+        <label for="sort">Sort by</label>
+        <select id="sort">
+          <option value="distance">Distance</option>
+          <option value="price">Price</option>
+          <option value="title">Title</option>
+          <option value="featured">Featured</option>
+        </select>
+      </div>
+      <div class="control small">
+        <label for="minPrice">Min price (R)</label>
+        <input id="minPrice" type="number" placeholder="0" min="0"/>
+      </div>
+      <div class="control small">
+        <label for="maxPrice">Max price (R)</label>
+        <input id="maxPrice" type="number" placeholder="5000" min="0"/>
+      </div>
+      <div class="control wide">
+        <label for="q">Keyword (title/description/location)</label>
+        <input id="q" type="text" placeholder="e.g., ensuite, Wi-Fi, near taxi rank, Pinoni"/>
+      </div>
+      <div class="control">
+        <label>Load data (JSON or CSV)</label>
+        <input id="fileInput" type="file" accept=".json,.csv" />
+        <div class="hint">Data stays in your browser. You can export below.</div>
+      </div>
+      <div class="control">
+        <label>Your location</label>
+        <div class="pillbar">
+          <button class="btn" id="detectBtn">Use my GPS</button>
+          <button class="btn secondary" id="pinBtn">Use map pin</button>
+          <button class="btn danger" id="clearBtn">Clear results</button>
+        </div>
+        <div class="hint locbadge" id="locHint">Waiting for location…</div>
+      </div>
+      <div class="control">
+        <label>Monetization</label>
+        <div class="pillbar">
+          <button class="btn gold" id="unlockBtn">Unlock contacts (enter code)</button>
+          <button class="btn secondary" id="exportBtn">Export listings (JSON)</button>
+        </div>
+        <div class="hint">Basic info is free. Contacts & exact pins unlock with a code (after payment).</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="map"></div>
+  <div class="list" id="list"></div>
+</main>
+
+<div class="wrap" style="margin-top:8px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+  <div class="ad">
+    <div class="title">Ad slot</div>
+    <!-- Replace with your Google AdSense code or a static banner -->
+    Add your AdSense unit here (publisher ID required).
+  </div>
+  <div class="ad">
+    <div class="title">Partner offer</div>
+    Moving truck? Discount code RENT10 at PartnerCo.
+  </div>
+</div>
+
+<section class="wrap" style="margin-top:12px;">
+  <div class="control" style="padding:16px;">
+    <label style="font-size:14px; color:#fff; margin-bottom:10px;">Owner: Add your listing (admin-only, local)</label>
+    <div class="row">
+      <div><label>Title</label><input id="o_title" type="text" placeholder="Backroom, Studio, Shared room"></div>
+      <div><label>Price (R)</label><input id="o_price" type="number" placeholder="2200"></div>
+      <div><label>Contact (phone)</label><input id="o_contact" type="text" placeholder="0781234567"></div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div><label>Description</label><input id="o_desc" type="text" placeholder="Wi-Fi, ensuite, near taxi rank"></div>
+      <div><label>Location name</label><input id="o_loc" type="text" placeholder="Braamfontein"></div>
+      <div><label>Featured?</label>
+        <select id="o_feat"><option value="no">No</option><option value="yes">Yes (paid)</option></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div><label>Latitude</label><input id="o_lat" type="number" step="0.000001" placeholder="-26.20"></div>
+      <div><label>Longitude</label><input id="o_lng" type="number" step="0.000001" placeholder="28.04"></div>
+      <div><button class="btn" id="o_add">Add to list</button></div>
+    </div>
+    <div class="fine" style="margin-top:6px;">This form only updates the listings in your browser for testing. Export JSON and host it for your users.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fine">For GPS, use HTTPS and allow location. Unlock codes are checked locally (salted hash). For real payments, point users to PayFast/Yoco and give them the code after payment.</div>
+  </div>
+</footer>
+
+<!-- Unlock modal -->
+<div class="modal" id="unlockModal">
+  <div class="card">
+    <h3 style="margin-top:0">Unlock contact details</h3>
+    <p class="fine">Enter your <strong>access code</strong>. After successful unlock, you’ll see phone numbers and exact map pins for 24 hours on this device.</p>
+    <div class="row" style="margin-top:10px;">
+      <div><label>Code</label><input id="codeInput" type="text" placeholder="e.g., KALAU-7DAYS-AB12"></div>
+      <div><button class="btn gold" id="codeSubmit">Unlock</button></div>
+    </div>
+    <div id="codeMsg" class="fine" style="margin-top:8px;"></div>
+    <div class="fine" style="margin-top:14px;">Tip: Buy a code via our checkout (PayFast/Yoco). If you already paid, check your SMS/WhatsApp for the code.</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+/* ------------------------------
+ Monetized one-page finder
+ - Contacts locked until user enters access code.
+ - Access code validation is offline using salted SHA-256 hashes (upload a codes.json).
+ - Owners can add "featured" listings; you can sell that as an upgrade.
+ - Ad placeholders included.
+--------------------------------- */
+
+// ======== Monetization & unlock configuration ========
+const CONFIG = {
+  unlockHours: 24,              // how long to keep unlocked
+  hashSalt: "change-this-salt", // replace with your own secret salt before sharing
+  // Optional: preload hashes (for demo). In production, upload a codes.json file.
+  demoHashes: [
+    // sha256("DEMO-1234" + salt) — will be generated in the code generator file
+  ]
+};
+
+// Persistent unlock state
+function isUnlocked(){
+  const raw = localStorage.getItem('rentals_unlock_until');
+  if(!raw) return false;
+  const until = Number(raw);
+  return Date.now() < until;
+}
+function setUnlocked(hours){
+  const until = Date.now() + hours*3600*1000;
+  localStorage.setItem('rentals_unlock_until', String(until));
+}
+
+// ======== App State ========
+const state = {
+  myLoc: null,
+  usePin: false,
+  listings: [],
+  markers: [],
+  map: null,
+  meMarker: null,
+  meCircle: null,
+  pinMarker: null,
+  codeHashes: new Set(CONFIG.demoHashes) // will extend when codes.json uploaded
+};
+
+// ===== Map init =====
+const map = L.map('map', { zoomControl: true });
+state.map = map;
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+map.setView([-26.2041, 28.0473], 12); // default JHB
+state.pinMarker = L.marker(map.getCenter(), { draggable: true, opacity: 0.85, title:"Drag to set your location" }).addTo(map);
+state.pinMarker.on('dragend', () => {
+  if(state.usePin){
+    const ll = state.pinMarker.getLatLng();
+    setMyLocation(ll.lat, ll.lng, 'Map pin');
+    refresh();
+  }
+});
+
+// ===== UI bindings =====
+const radiusInput = document.getElementById('radius');
+const radiusVal = document.getElementById('radiusVal');
+const sortSelect = document.getElementById('sort');
+const minPriceInput = document.getElementById('minPrice');
+const maxPriceInput = document.getElementById('maxPrice');
+const qInput = document.getElementById('q');
+const fileInput = document.getElementById('fileInput');
+const detectBtn = document.getElementById('detectBtn');
+const pinBtn = document.getElementById('pinBtn');
+const clearBtn = document.getElementById('clearBtn');
+const listEl = document.getElementById('list');
+const locHint = document.getElementById('locHint');
+const unlockBtn = document.getElementById('unlockBtn');
+const exportBtn = document.getElementById('exportBtn');
+const unlockModal = document.getElementById('unlockModal');
+const codeInput = document.getElementById('codeInput');
+const codeSubmit = document.getElementById('codeSubmit');
+const codeMsg = document.getElementById('codeMsg');
+
+radiusInput.addEventListener('input', ()=>{ radiusVal.textContent = radiusInput.value; refresh(); });
+sortSelect.addEventListener('change', refresh);
+[minPriceInput, maxPriceInput].forEach(el=> el.addEventListener('input', refresh));
+qInput.addEventListener('input', debounce(refresh, 250));
+detectBtn.addEventListener('click', geolocate);
+pinBtn.addEventListener('click', ()=>{ state.usePin = true; locHint.textContent = 'Move the map pin to your location, then results will auto-update.'; refresh(); });
+clearBtn.addEventListener('click', ()=>{ state.listings = []; clearMarkers(); listEl.innerHTML = '<div class="empty">Cleared. Upload a new file to see results.</div>'; });
+exportBtn.addEventListener('click', exportListings);
+
+// Unlock modal
+unlockBtn.addEventListener('click', ()=>{ unlockModal.style.display = 'flex'; codeMsg.textContent=''; codeInput.value=''; codeInput.focus(); });
+unlockModal.addEventListener('click', (e)=>{ if(e.target===unlockModal){ unlockModal.style.display='none'; }});
+codeSubmit.addEventListener('click', async ()=>{
+  const ok = await validateCode(codeInput.value.trim());
+  if(ok){
+    setUnlocked(CONFIG.unlockHours);
+    codeMsg.textContent = '✅ Unlocked! Contacts & exact pins are now visible.';
+    unlockModal.style.display = 'none';
+    refresh();
+  } else {
+    codeMsg.textContent = '❌ Invalid code. Check your SMS/WhatsApp and try again.';
+  }
+});
+
+// Load listings file
+fileInput.addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file){ return; }
+  const text = await file.text();
+  let rows = [];
+  try {
+    if(file.name.toLowerCase().endsWith('.json')){
+      const data = JSON.parse(text);
+      // Two types: A) listings array, B) codes.json with hashes
+      if(Array.isArray(data)){
+        rows = data;
+      } else if(Array.isArray(data.hashes)){
+        data.hashes.forEach(h => state.codeHashes.add(String(h)));
+        alert('Loaded '+data.hashes.length+' unlock hashes.');
+      } else {
+        rows = data.listings || [];
+      }
+    } else {
+      rows = parseCSV(text);
+    }
+  } catch(err){
+    alert('Could not read file: ' + err.message);
+    return;
+  }
+  if(rows.length){
+    state.listings = normalize(rows);
+    refresh();
+  }
+});
+
+// Sample data
+const sampleData = [
+  {"id":1,"title":"Single Room w/ Bathroom","price":"R2500/month","latitude":-26.2041,"longitude":28.0473,"description":"CBD — includes electricity, Wi-Fi.","contact":"+27781234567","location":"Johannesburg CBD","featured":true},
+  {"id":2,"title":"Shared Room","price":"R1500/month","latitude":-26.1985,"longitude":28.0532,"description":"Walking distance to taxi rank.","contact":"+27739876543","location":"Braamfontein","featured":false},
+  {"id":3,"title":"Studio Ensuite","price":"R3200","latitude":-26.2326,"longitude":27.9933,"description":"Private entrance, safe parking.","contact":"+27815559912","location":"Melville","featured":false},
+  {"id":4,"title":"Backroom (cottage)","price":"R2200","latitude":-26.2708,"longitude":28.1123,"description":"Includes water, prepaid electricity.","contact":"+27723334444","location":"East Rand","featured":true},
+  {"id":5,"title":"Room near campus","price":"R1800","latitude":-26.1844,"longitude":28.0470,"description":"Student area, furnished bed + desk.","contact":"+27790001212","location":"Parktown","featured":false}
+];
+state.listings = normalize(sampleData);
+
+// Owner add form
+document.getElementById('o_add').addEventListener('click', ()=>{
+  const t = val('o_title'), p = Number(val('o_price')||0), c = val('o_contact'), d = val('o_desc'), loc = val('o_loc');
+  const lat = Number(val('o_lat')), lng = Number(val('o_lng'));
+  const feat = document.getElementById('o_feat').value === 'yes';
+  if(!isFinite(lat) || !isFinite(lng)){ alert('Please enter valid latitude/longitude'); return; }
+  const row = { title:t||'Room', price:p, contact:c, description:d, location:loc, latitude:lat, longitude:lng, featured:feat };
+  state.listings.push(normalize([row])[0]);
+  refresh();
+});
+function val(id){ return document.getElementById(id).value; }
+
+// Start
+geolocate();
+refresh();
+
+// ===== Functions =====
+async function validateCode(code){
+  if(!code) return false;
+  const hash = await sha256(code + CONFIG.hashSalt);
+  return state.codeHashes.has(hash);
+}
+async function sha256(text) {
+  const enc = new TextEncoder();
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode(text));
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function exportListings(){
+  const blob = new Blob([JSON.stringify(state.listings, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'listings.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function geolocate(){
+  state.usePin = false;
+  if(!navigator.geolocation){
+    locHint.textContent = 'Geolocation not supported. Use the map pin instead.';
+    state.usePin = true;
+    return;
+  }
+  locHint.textContent = 'Getting your GPS position…';
+  navigator.geolocation.getCurrentPosition(
+    (pos)=>{
+      const { latitude, longitude } = pos.coords;
+      setMyLocation(latitude, longitude, 'GPS');
+      state.pinMarker.setLatLng([latitude, longitude]);
+      refresh();
+    },
+    (err)=>{
+      locHint.textContent = 'GPS denied or unavailable ('+ err.message +'). You can use the map pin instead.';
+      state.usePin = true;
+      refresh();
+    },
+    { enableHighAccuracy:true, timeout:10000, maximumAge: 10000 }
+  );
+}
+
+function setMyLocation(lat, lng, source='GPS'){
+  state.myLoc = { lat, lng };
+  locHint.innerHTML = 'Your location set via <strong>'+source+'</strong>: ' + lat.toFixed(5)+', '+lng.toFixed(5);
+  if(state.meMarker){ state.map.removeLayer(state.meMarker); }
+  if(state.meCircle){ state.map.removeLayer(state.meCircle); }
+  state.meMarker = L.circleMarker([lat, lng], { radius:8 }).addTo(map).bindTooltip('You are here');
+  state.meCircle = L.circle([lat, lng], { radius: (Number(radiusInput.value) * 1000), fillOpacity:0.06 }).addTo(map);
+  state.map.setView([lat, lng], 13);
+}
+
+function refresh(){
+  if(state.myLoc && state.meCircle){
+    state.meCircle.setLatLng([state.myLoc.lat, state.myLoc.lng]);
+    state.meCircle.setRadius(Number(radiusInput.value) * 1000);
+  }
+  const filtered = filterAndSort();
+  renderList(filtered);
+  renderMarkers(filtered);
+}
+
+function filterAndSort(){
+  const q = qInput.value.trim().toLowerCase();
+  const minP = Number(minPriceInput.value || 0);
+  const maxP = Number(maxPriceInput.value || Number.MAX_SAFE_INTEGER);
+  const withinKm = Number(radiusInput.value);
+  const haveLoc = !!state.myLoc;
+  const unlocked = isUnlocked();
+
+  const arr = state.listings
+    .map(x => {
+      const priceNum = toPrice(x.price);
+      const d = haveLoc ? haversine(state.myLoc.lat, state.myLoc.lng, x.latitude, x.longitude) : Infinity;
+      // If locked, jitter location on map and hide contact later
+      const jitter = unlocked ? {lat:x.latitude, lng:x.longitude} : obfuscate(x.latitude, x.longitude);
+      return { ...x, priceNum, distanceKm: d, mapLat:jitter.lat, mapLng:jitter.lng };
+    })
+    .filter(x => (x.priceNum >= minP && x.priceNum <= maxP))
+    .filter(x => {
+      if(!q) return true;
+      const blob = (x.title + ' ' + (x.description||'') + ' ' + (x.location||'')).toLowerCase();
+      return blob.includes(q);
+    })
+    .filter(x => !haveLoc ? true : x.distanceKm <= withinKm);
+
+  const sortBy = sortSelect.value;
+  arr.sort((a,b)=>{
+    if(sortBy === 'price') return (a.priceNum||0) - (b.priceNum||0);
+    if(sortBy === 'title') return (a.title||'').localeCompare(b.title||'');
+    if(sortBy === 'featured') return (b.featured?1:0) - (a.featured?1:0);
+    return (a.distanceKm||Infinity) - (b.distanceKm||Infinity);
+  });
+  return arr;
+}
+
+function renderList(rows){
+  const unlocked = isUnlocked();
+  if(rows.length === 0){
+    listEl.innerHTML = '<div class="empty">No results. Try increasing radius, adjusting price, or loading more data.</div>';
+    return;
+  }
+  listEl.innerHTML = '';
+  for(const r of rows){
+    const el = document.createElement('div');
+    el.className = 'item';
+    const contact = unlocked ? (r.contact||'—') : '<em>Locked — click “Unlock contacts”</em>';
+    el.innerHTML = `
+      <div class="avatar">${r.featured ? '⭐' : 'R'}</div>
+      <div>
+        <div class="pillbar">
+          <span class="badge price">${formatPrice(r.price)}</span>
+          ${r.featured ? `<span class="badge featured">Featured</span>` : ''}
+          ${r.distanceKm !== Infinity ? `<span class="badge">📍 ${(r.distanceKm).toFixed(2)} km</span>`:''}
+          ${r.location ? `<span class="badge">🗺️ ${escapeHTML(r.location)}</span>`:''}
+          <span class="badge">☎️ ${contact}</span>
+        </div>
+        <div style="margin-top:6px; font-weight:700">${escapeHTML(r.title||'Untitled')}</div>
+        ${r.description ? `<div style="margin-top:4px; color:var(--muted)">${escapeHTML(r.description)}</div>`:''}
+      </div>`;
+    el.addEventListener('click', ()=>{ focusMarker(r.__id); });
+    listEl.appendChild(el);
+  }
+}
+
+function renderMarkers(rows){
+  clearMarkers();
+  const bounds = [];
+  for(const r of rows){
+    const m = L.marker([r.mapLat, r.mapLng]).addTo(map);
+    const unlocked = isUnlocked();
+    const contact = unlocked ? (escapeHTML(r.contact||'')) : '<em>Locked — click “Unlock contacts”</em>';
+    m.bindPopup(`<strong>${escapeHTML(r.title||'Untitled')}</strong><br>
+      ${formatPrice(r.price)}<br>
+      ${r.location ? escapeHTML(r.location)+'<br>':''}
+      ${r.description ? '<small>'+escapeHTML(r.description)+'</small><br>':''}
+      ${r.featured ? '<span style="color:#fcd34d">⭐ Featured</span><br>':''}
+      <strong>Contact:</strong> ${contact}`);
+    m.on('click', ()=>{ highlightList(r.__id); });
+    state.markers.push({ id: r.__id, marker: m });
+    bounds.push([r.mapLat, r.mapLng]);
+  }
+  if(bounds.length){
+    const group = L.featureGroup(state.markers.map(x=>x.marker));
+    map.fitBounds(group.getBounds().pad(0.2));
+  } else if(state.myLoc){
+    map.setView([state.myLoc.lat, state.myLoc.lng], 13);
+  }
+}
+
+function clearMarkers(){ for(const m of state.markers){ map.removeLayer(m.marker); } state.markers = []; }
+function focusMarker(id){ const pair = state.markers.find(m=>m.id===id); if(pair){ pair.marker.openPopup(); map.flyTo(pair.marker.getLatLng(), 16, {duration:0.4}); } }
+function highlightList(id){ /* optional */ }
+
+function normalize(rows){
+  const safe = []; let idx = 1;
+  for(const r of rows){
+    const o = lowerKeys(r);
+    const lat = num(o.latitude ?? o.lat ?? o.y) ;
+    const lng = num(o.longitude ?? o.lng ?? o.lon ?? o.long ?? o.x);
+    if(!isFinite(lat) || !isFinite(lng)) continue;
+    safe.push({
+      __id: (o.id ?? idx++),
+      id: (o.id ?? idx),
+      title: str(o.title) || 'Room',
+      price: o.price ?? '',
+      latitude: lat, longitude: lng,
+      description: str(o.description),
+      contact: str(o.contact),
+      location: str(o.location || o.area || o.neighbourhood),
+      featured: Boolean(o.featured === true || String(o.featured).toLowerCase()==='yes')
+    });
+  }
+  return safe;
+}
+
+function parseCSV(text){
+  const lines = text.replace(/\r/g,'').split('\n').filter(Boolean);
+  const headers = lines[0].split(',').map(h=>h.trim());
+  const out = [];
+  for(let i=1;i<lines.length;i++){
+    const row = splitCSVLine(lines[i]);
+    const obj = {};
+    headers.forEach((h,idx)=> obj[h] = row[idx]);
+    out.push(obj);
+  }
+  return out;
+}
+function splitCSVLine(line){
+  const res = []; let cur=''; let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='\"'){
+      if(inQ && line[i+1]==='\"'){ cur+='\"'; i++; }
+      else inQ=!inQ;
+    } else if(c===',' && !inQ){
+      res.push(cur); cur='';
+    } else cur+=c;
+  }
+  res.push(cur);
+  return res.map(x=>x.trim());
+}
+
+// Utils
+function toPrice(p){ if(p==null) return NaN; const m = (''+p).replace(/[^\d.]/g,'').trim(); return Number(m||NaN); }
+function formatPrice(p){ const n = toPrice(p); if(!isFinite(n)) return escapeHTML(p||''); return 'R ' + n.toLocaleString(); }
+function str(x){ return (x==null)?'': String(x); }
+function num(x){ const n = Number(x); return isFinite(n) ? n : NaN; }
+function lowerKeys(obj){ const o={}; for(const k in obj){ o[k.toLowerCase()] = obj[k]; } return o; }
+function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; }
+function haversine(lat1, lon1, lat2, lon2){ const R=6371, toRad=deg=>deg*Math.PI/180; const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1); const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2; return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); }
+// Obfuscate lat/lng by ~400-800m when locked (so users cannot pinpoint without paying)
+function obfuscate(lat,lng){
+  if(isUnlocked()) return {lat,lng};
+  const r = 0.004 + Math.random()*0.004; // ~0.4–0.8 km
+  const theta = Math.random()*Math.PI*2;
+  return { lat: lat + r*Math.cos(theta), lng: lng + r*Math.sin(theta) };
+}
+// Escape
+function escapeHTML(str){ return (str||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+</script>
+</body>
+</html>
